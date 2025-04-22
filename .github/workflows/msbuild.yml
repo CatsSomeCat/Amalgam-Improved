@@ -23,7 +23,21 @@ jobs:
 
     - name: Build
       working-directory: ${{ env.GITHUB_WORKSPACE }}
-      run: msbuild Amalgam.sln /p:Platform=${{ matrix.platform }} /p:Configuration=${{ matrix.configuration }}
+      run: |
+        $avxFlag = if ("${{ matrix.configuration }}" -match "AVX2") { "/p:EnableEnhancedInstructionSet=AVX2" } else { "" }
+        msbuild Amalgam.sln `
+          /p:Platform=${{ matrix.platform }} `
+          /p:Configuration=${{ matrix.configuration }} `
+          $avxFlag `
+          /p:Optimization=MaxSpeed `
+          /p:FavorSizeOrSpeed=Speed `
+          /p:EnableIntrinsicFunctions=true `
+          /p:WholeProgramOptimization=true `
+          /p:InlineFunctionExpansion=AnySuitable `
+          /p:OmitFramePointers=true `
+          /p:FloatingPointModel=Fast `
+          /p:FunctionLevelLinking=true `
+          /p:StringPooling=true
     
     - uses: actions/upload-artifact@v4
       with:
