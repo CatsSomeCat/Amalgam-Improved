@@ -28,7 +28,7 @@ Color_t CColor::GetEntityNameColor(CTFPlayer* pLocal, CBaseEntity* pEntity, bool
 	{
 		return Vars::Colors::LocalName.Value;
 	}
-	else if (pEntity->entindex() == G::Target.first)
+	else if (pEntity->entindex() == G::AimTarget.m_iEntIndex )
 	{
 		return Vars::Colors::TargetName.Value;
 	}
@@ -70,7 +70,7 @@ Color_t CColor::GetEntityNameColor(CTFPlayer* pLocal, CBaseEntity* pEntity, bool
 	return { 255, 255, 255, 255 };
 }
 
-Color_t CColor::GetEntityDrawColor(CTFPlayer* pLocal, CBaseEntity* pEntity, bool bRelative, int* pType)
+Color_t CColor::GetEntityDrawColor(CTFPlayer* pLocal, CBaseEntity* pEntity, bool bRelative, CBaseEntity* pTarget, int* pType)
 {
 	Color_t out = GetTeamColor(pLocal->m_iTeamNum(), pEntity->m_iTeamNum(), bRelative);
 	if (pType) *pType = 1;
@@ -86,23 +86,22 @@ Color_t CColor::GetEntityDrawColor(CTFPlayer* pLocal, CBaseEntity* pEntity, bool
 		}
 		else if (H::Entities.IsFriend(pPlayer->entindex()))
 		{
-			//out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(FRIEND_TAG)].Color;
-			out = Vars::Colors::Friend.Value;
+			//out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(FRIEND_TAG)].m_tColor;
 			if (pType) *pType = 3;
 		}
 		/*else if (H::Entities.InParty(pPlayer->entindex()))
 		{
-			out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(PARTY_TAG)].Color;
+			out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(PARTY_TAG)].m_tColor;
 			if (pType) *pType = 4;
 		}*/
 		/*/else if (auto pTag = F::PlayerUtils.GetSignificantTag(pPlayer->entindex()))
 		{
-			out = pTag->Color;
+			out = pTag->m_tColor;
 			if (pType) *pType = 5;
 		}*/
 	}
 
-	if (G::Target.first > 0 && pEntity->entindex() == G::Target.first)
+	if (pTarget && pTarget->entindex() == G::AimTarget.m_iEntIndex)
 	{
 		out = Vars::Colors::Target.Value;
 		if (pType) *pType = 6;
@@ -118,11 +117,11 @@ Color_t CColor::GetScoreboardColor(int iIndex)
 	if (iIndex == I::EngineClient->GetLocalPlayer())
 		out = Vars::Colors::Local.Value;
 	else if (H::Entities.IsFriend(iIndex))
-		out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(FRIEND_TAG)].Color;
+		out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(FRIEND_TAG)].m_tColor;
 	else if (H::Entities.InParty(iIndex))
-		out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(PARTY_TAG)].Color;
+		out = F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(PARTY_TAG)].m_tColor;
 	else if (auto pTag = F::PlayerUtils.GetSignificantTag(iIndex))
-		out = pTag->Color;
+		out = pTag->m_tColor;
 
 	return out;
 }

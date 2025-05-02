@@ -36,6 +36,7 @@ void CMisc::RunPost(CTFPlayer* pLocal, CUserCmd* pCmd, bool pSendPacket)
 
 	EdgeJump(pLocal, pCmd, true);
 	TauntKartControl(pLocal, pCmd);
+	AutoPeek(pLocal, pCmd, true);
 	FastMovement(pLocal, pCmd);
 }
 
@@ -124,8 +125,7 @@ void CMisc::AutoStrafe(CTFPlayer* pLocal, CUserCmd* pCmd)
 		float flForward = pCmd->forwardmove, flSide = pCmd->sidemove;
 
 		Vec3 vForward, vRight; Math::AngleVectors(pCmd->viewangles, &vForward, &vRight, nullptr);
-		vForward.z = vRight.z = 0.f;
-		vForward.Normalize(), vRight.Normalize();
+		vForward.Normalize2D(), vRight.Normalize2D();
 
 		Vec3 vWishDir = {}; Math::VectorAngles({ vForward.x * flForward + vRight.x * flSide, vForward.y * flForward + vRight.y * flSide, 0.f }, vWishDir);
 		Vec3 vCurDir = {}; Math::VectorAngles(pLocal->m_vecVelocity(), vCurDir);
@@ -141,46 +141,6 @@ void CMisc::AutoStrafe(CTFPlayer* pLocal, CUserCmd* pCmd)
 		pCmd->sidemove = flSinRot * flForward + flCosRot * flSide;
 	}
 	}
-}
-
-void CMisc::AutoPeek(CTFPlayer* pLocal, CUserCmd* pCmd)
-{
-	static bool bReturning = false;
-	if (Vars::CL_Move::AutoPeek.Value)
-	{
-		const Vec3 vLocalPos = pLocal->m_vecOrigin();
-
-		if (G::Attacking && m_bPeekPlaced)
-			bReturning = true;
-		if (!bReturning && !pLocal->m_hGroundEntity())
-			m_bPeekPlaced = false;
-
-		if (!m_bPeekPlaced)
-		{
-			m_vPeekReturnPos = vLocalPos;
-			m_bPeekPlaced = true;
-		}
-		else
-		{
-			static Timer tTimer = {};
-			if (tTimer.Run(0.7f))
-				H::Particles.DispatchParticleEffect("ping_circle", m_vPeekReturnPos, {});
-		}
-
-		if (bReturning)
-		{
-			if (vLocalPos.DistTo(m_vPeekReturnPos) < 8.f)
-			{
-				bReturning = false;
-				return;
-			}
-
-			SDK::WalkTo(pCmd, pLocal, m_vPeekReturnPos);
-			pCmd->buttons &= ~IN_JUMP;
-		}
-	}
-	else
-		m_bPeekPlaced = bReturning = false;
 }
 
 void CMisc::MovementLock(CTFPlayer* pLocal, CUserCmd* pCmd)
@@ -406,7 +366,7 @@ void CMisc::FastMovement(CTFPlayer* pLocal, CUserCmd* pCmd)
 	}
 	case 1:
 	{
-		if ((pLocal->IsDucking() ? !Vars::Misc::Movement::CrouchSpeed.Value : !Vars::Misc::Movement::FastAccel.Value)
+		if ((pLocal->IsDucking() ? !Vars::Misc::Movement::CrouchSpeed.Value : !Vars::Misc::Movement::FastAccelerate.Value)
 			|| Vars::Misc::Game::AntiCheatCompatibility.Value
 			|| G::Attacking == 1 || F::Ticks.m_bDoubletap || F::Ticks.m_bSpeedhack || F::Ticks.m_bRecharge || G::AntiAim || I::GlobalVars->tickcount % 2)
 			return;
@@ -426,6 +386,49 @@ void CMisc::FastMovement(CTFPlayer* pLocal, CUserCmd* pCmd)
 		break;
 	}
 	}
+}
+
+void CMisc::AutoPeek(CTFPlayer* pLocal, CUserCmd* pCmd, bool bPost)
+{
+	static bool bReturning = false;
+
+	if (!bPost)
+	{
+		if (Vars::AutoPeek::Enabled.Value)
+		{
+			Vec3 vLocalPos = pLocal->m_vecOrigin();
+
+			if (bReturning)
+			{
+				if (vLocalPos.DistTo(m_vPeekReturnPos) < 8.f)
+				{
+					bReturning = false;
+					return;
+				}
+
+				SDK::WalkTo(pCmd, pLocal, m_vPeekReturnPos);
+				pCmd->buttons &= ~IN_JUMP;
+			}
+			else if (!pLocal->m_hGroundEntity())
+				m_bPeekPlaced = false;
+
+			if (!m_bPeekPlaced)
+			{
+				m_vPeekReturnPos = vLocalPos;
+				m_bPeekPlaced = true;
+			}
+			else
+			{
+				static Timer tTimer = {};
+				if (tTimer.Run(0.7f))
+					H::Particles.DispatchParticleEffect("ping_circle", m_vPeekReturnPos, {});
+			}
+		}
+		else
+			m_bPeekPlaced = bReturning = false;
+	}
+	else if (G::Attacking && m_bPeekPlaced)
+		bReturning = true;
 }
 
 void CMisc::EdgeJump(CTFPlayer* pLocal, CUserCmd* pCmd, bool bPost)
@@ -521,23 +524,17 @@ int CMisc::AntiBackstab(CTFPlayer* pLocal, CUserCmd* pCmd, bool bSendPacket)
 		{
 			auto TargetIsBehind = [&]()
 				{
-					Vec3 vToTarget = pLocal->m_vecOrigin() - pTargetPos.first;
-					vToTarget.z = 0.f;
-					const float flDist = vToTarget.Length();
+					Vec3 vToTarget = (pLocal->m_vecOrigin() - pTargetPos.first).To2D();
+					const float flDist = vToTarget.Normalize();
 					if (!flDist)
 						return true;
 
-					Vec3 vTargetAngles = pCmd->viewangles;
-
-					vToTarget.Normalize();
 					float flTolerance = 0.0625f;
 					float flExtra = 2.f * flTolerance / flDist; // account for origin tolerance
-
 					float flPosVsTargetViewMinDot = 0.f - 0.0031f - flExtra;
 
-					Vec3 vTargetForward; Math::AngleVectors(vTargetAngles, &vTargetForward);
-					vTargetForward.z = 0.f;
-					vTargetForward.Normalize();
+					Vec3 vTargetForward; Math::AngleVectors(pCmd->viewangles, &vTargetForward);
+					vTargetForward.Normalize2D();
 
 					return vToTarget.Dot(vTargetForward) > flPosVsTargetViewMinDot;
 				};
@@ -607,27 +604,27 @@ bool CMisc::SteamRPC()
 	*/
 
 
-	if (!Vars::Misc::Steam::EnableRPC.Value)
+	if (!Vars::Misc::SteamRPC::Enabled.Value)
 		return false;
 
 	I::SteamFriends->SetRichPresence("steam_display", "#TF_RichPresence_Display");
-	if (!I::EngineClient->IsInGame() && !Vars::Misc::Steam::OverrideMenu.Value)
+	if (!I::EngineClient->IsInGame() && !Vars::Misc::SteamRPC::OverrideInMenu.Value)
 		I::SteamFriends->SetRichPresence("state", "MainMenu");
 	else
 	{
 		I::SteamFriends->SetRichPresence("state", "PlayingMatchGroup");
 
-		switch (Vars::Misc::Steam::MatchGroup.Value)
+		switch (Vars::Misc::SteamRPC::MatchGroup.Value)
 		{
-		case Vars::Misc::Steam::MatchGroupEnum::SpecialEvent: I::SteamFriends->SetRichPresence("matchgrouploc", "SpecialEvent"); break;
-		case Vars::Misc::Steam::MatchGroupEnum::MvMMannUp: I::SteamFriends->SetRichPresence("matchgrouploc", "MannUp"); break;
-		case Vars::Misc::Steam::MatchGroupEnum::Competitive: I::SteamFriends->SetRichPresence("matchgrouploc", "Competitive6v6"); break;
-		case Vars::Misc::Steam::MatchGroupEnum::Casual: I::SteamFriends->SetRichPresence("matchgrouploc", "Casual"); break;
-		case Vars::Misc::Steam::MatchGroupEnum::MvMBootCamp: I::SteamFriends->SetRichPresence("matchgrouploc", "BootCamp"); break;
+		case Vars::Misc::SteamRPC::MatchGroupEnum::SpecialEvent: I::SteamFriends->SetRichPresence("matchgrouploc", "SpecialEvent"); break;
+		case Vars::Misc::SteamRPC::MatchGroupEnum::MvMMannUp: I::SteamFriends->SetRichPresence("matchgrouploc", "MannUp"); break;
+		case Vars::Misc::SteamRPC::MatchGroupEnum::Competitive: I::SteamFriends->SetRichPresence("matchgrouploc", "Competitive6v6"); break;
+		case Vars::Misc::SteamRPC::MatchGroupEnum::Casual: I::SteamFriends->SetRichPresence("matchgrouploc", "Casual"); break;
+		case Vars::Misc::SteamRPC::MatchGroupEnum::MvMBootCamp: I::SteamFriends->SetRichPresence("matchgrouploc", "BootCamp"); break;
 		}
 	}
-	I::SteamFriends->SetRichPresence("currentmap", Vars::Misc::Steam::MapText.Value.c_str());
-	I::SteamFriends->SetRichPresence("steam_player_group_size", std::to_string(Vars::Misc::Steam::GroupSize.Value).c_str());
+	I::SteamFriends->SetRichPresence("currentmap", Vars::Misc::SteamRPC::MapText.Value.c_str());
+	I::SteamFriends->SetRichPresence("steam_player_group_size", std::to_string(Vars::Misc::SteamRPC::GroupSize.Value).c_str());
 
 	return true;
 }

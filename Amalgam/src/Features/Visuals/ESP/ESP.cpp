@@ -1,6 +1,7 @@
 #include "ESP.h"
 
 #include "../../Players/PlayerUtils.h"
+#include "../../Spectate/Spectate.h"
 #include "../../Simulation/MovementSimulation/MovementSimulation.h"
 
 MAKE_SIGNATURE(CTFPlayerSharedUtils_GetEconItemViewByLoadoutSlot, "client.dll", "48 89 6C 24 ? 56 41 54 41 55 41 56 41 57 48 83 EC", 0x0);
@@ -27,22 +28,34 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 	if (!(Vars::ESP::Draw.Value & Vars::ESP::DrawEnum::Players) || !Vars::ESP::Player.Value)
 		return;
 
+	auto pObserverTarget = pLocal->m_hObserverTarget( ).Get( );
+	int iObserverMode = pLocal->m_iObserverMode( );
+	if ( F::Spectate.m_iTarget != -1 )
+	{
+		pObserverTarget = F::Spectate.m_pTargetTarget;
+		iObserverMode = F::Spectate.m_iTargetMode;
+	}
+
 	auto pResource = H::Entities.GetPR();
 	for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ALL))
 	{
 		auto pPlayer = pEntity->As<CTFPlayer>();
 		int iIndex = pPlayer->entindex();
 
-		if (pLocal->m_iObserverMode() == OBS_MODE_FIRSTPERSON ? pLocal->m_hObserverTarget().Get() == pPlayer : iIndex == I::EngineClient->GetLocalPlayer())
+		bool bLocal = iIndex == I::EngineClient->GetLocalPlayer();
+		bool bSpectate = iObserverMode == OBS_MODE_FIRSTPERSON || iObserverMode == OBS_MODE_THIRDPERSON;
+		bool bTarget = bSpectate && pObserverTarget == pPlayer;
+
+		if (!pPlayer->IsAlive() || pPlayer->IsAGhost())
+			continue;
+
+		if (bLocal || bTarget)
 		{
 			if (!(Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Local) || !I::Input->CAM_IsThirdPerson())
 				continue;
 		}
 		else
 		{
-			if (!pPlayer->IsAlive() || pPlayer->IsAGhost())
-				continue;
-
 			if (pPlayer->IsDormant())
 			{
 				if (!H::Entities.GetDormancy(iIndex) || !Vars::ESP::DormantAlpha.Value
@@ -53,7 +66,7 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 			if (!(Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Prioritized && F::PlayerUtils.IsPrioritized(iIndex))
 				&& !(Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Friends && H::Entities.IsFriend(iIndex))
 				&& !(Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Party && H::Entities.InParty(iIndex))
-				&& pPlayer->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Team) : !(Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Enemy))
+				&& !(pPlayer->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Enemy : Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Team))
 				continue;
 		}
 
@@ -66,7 +79,7 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 		tCache.m_bBox = Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Box;
 		tCache.m_bBones = Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Bones;
 
-		if (Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Distance && pPlayer != pLocal)
+		if (Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Distance && !bLocal)
 		{
 			Vec3 vDelta = pPlayer->m_vecOrigin() - pLocal->m_vecOrigin();
 			tCache.m_vText.push_back({ ESPTextEnum::Bottom, std::format("[{:.0f}M]", vDelta.Length2D() / 41), Vars::Menu::Theme::Active.Value, Vars::Menu::Theme::Background.Value });
@@ -82,7 +95,7 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 			if (Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Priority)
 			{
 				if (auto pTag = F::PlayerUtils.GetSignificantTag(pi.friendsID, 1)) // 50 alpha as white outline tends to be more apparent
-					tCache.m_vText.push_back({ ESPTextEnum::Bottom, pTag->Name, pTag->Color, H::Draw.IsColorDark(pTag->Color) ? Color_t(255, 255, 255, 50) : Color_t(0, 0, 0, 255) });
+					tCache.m_vText.emplace_back(ESPTextEnum::Bottom, pTag->m_sName, pTag->m_tColor, H::Draw.IsColorDark(pTag->m_tColor) ? Color_t(255, 255, 255, 50) : Color_t(0, 0, 0));
 			}
 
 			if (Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Labels)
@@ -91,19 +104,25 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 				for (auto& iID : F::PlayerUtils.m_mPlayerTags[pi.friendsID])
 				{
 					auto pTag = F::PlayerUtils.GetTag(iID);
-					if (pTag && pTag->Label)
+					if (pTag && pTag->m_bLabel)
 						vTags.push_back(pTag);
 				}
 				if (H::Entities.IsFriend(iIndex))
 				{
 					auto pTag = &F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(FRIEND_TAG)];
-					if (pTag->Label)
+					if (pTag->m_bLabel)
 						vTags.push_back(pTag);
 				}
 				if (H::Entities.InParty(iIndex))
 				{
 					auto pTag = &F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(PARTY_TAG)];
-					if (pTag->Label)
+					if (pTag->m_bLabel)
+						vTags.push_back(pTag);
+				}
+				if (H::Entities.IsF2P(pi.friendsID))
+				{
+					auto pTag = &F::PlayerUtils.m_vTags[F::PlayerUtils.TagToIndex(F2P_TAG)];
+					if (pTag->m_bLabel)
 						vTags.push_back(pTag);
 				}
 
@@ -112,14 +131,14 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 					std::sort(vTags.begin(), vTags.end(), [&](const auto a, const auto b) -> bool
 						{
 							// sort by priority if unequal
-							if (a->Priority != b->Priority)
-								return a->Priority > b->Priority;
+							if (a->m_iPriority != b->m_iPriority)
+								return a->m_iPriority > b->m_iPriority;
 
-							return a->Name < b->Name;
+							return a->m_sName < b->m_sName;
 						});
 
 					for (auto& pTag : vTags) // 50 alpha as white outline tends to be more apparent
-						tCache.m_vText.push_back({ ESPTextEnum::Right, pTag->Name, pTag->Color, H::Draw.IsColorDark(pTag->Color) ? Color_t(255, 255, 255, 50) : Color_t(0, 0, 0, 255) });
+						tCache.m_vText.emplace_back(ESPTextEnum::Right, pTag->m_sName, pTag->m_tColor, H::Draw.IsColorDark(pTag->m_tColor) ? Color_t(255, 255, 255, 50) : Color_t(0, 0, 0));
 				}
 			}
 		}
@@ -232,6 +251,16 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 			// Buffs
 			if (Vars::ESP::Player.Value & Vars::ESP::PlayerEnum::Buffs)
 			{
+				if (pPlayer->InCond(TF_COND_INVULNERABLE) ||
+					pPlayer->InCond(TF_COND_INVULNERABLE_HIDE_UNLESS_DAMAGED) ||
+					pPlayer->InCond(TF_COND_INVULNERABLE_USER_BUFF) ||
+					pPlayer->InCond(TF_COND_INVULNERABLE_CARD_EFFECT))
+					tCache.m_vText.emplace_back(ESPTextEnum::Right, "Uber", Vars::Colors::IndicatorTextBad.Value, Vars::Menu::Theme::Background.Value);
+				else if (pPlayer->InCond(TF_COND_MEGAHEAL))
+					tCache.m_vText.emplace_back(ESPTextEnum::Right, "Megaheal", Vars::Colors::IndicatorTextBad.Value, Vars::Menu::Theme::Background.Value);
+				else if (pPlayer->InCond(TF_COND_PHASE))
+					tCache.m_vText.emplace_back(ESPTextEnum::Right, "Bonk", Vars::Colors::IndicatorTextBad.Value, Vars::Menu::Theme::Background.Value);
+
 				bool bCrits = false, bMiniCrits = false;
 				if (pPlayer->IsCritBoosted())
 					pWeapon&& pWeapon->GetWeaponID() == TF_WEAPON_PARTICLE_CANNON ? bMiniCrits = true : bCrits = true;
@@ -315,6 +344,19 @@ void CESP::StorePlayers(CTFPlayer* pLocal)
 					tCache.m_vText.emplace_back(ESPTextEnum::Right, "Supernova", Vars::Menu::Theme::Active.Value, Vars::Menu::Theme::Background.Value);
 				if (pPlayer->InCond(TF_COND_POWERUPMODE_DOMINANT))
 					tCache.m_vText.emplace_back(ESPTextEnum::Right, "Dominant", Vars::Menu::Theme::Active.Value, Vars::Menu::Theme::Background.Value);
+
+				if (pPlayer->InCond(TF_COND_RADIUSHEAL) ||
+					pPlayer->InCond(TF_COND_HEALTH_BUFF) ||
+					pPlayer->InCond(TF_COND_RADIUSHEAL_ON_DAMAGE) ||
+					pPlayer->InCond(TF_COND_HALLOWEEN_QUICK_HEAL) ||
+					pPlayer->InCond(TF_COND_HALLOWEEN_HELL_HEAL) ||
+					pPlayer->InCond(TF_COND_KING_BUFFED))
+					tCache.m_vText.emplace_back(ESPTextEnum::Right, "HP+", Vars::Colors::IndicatorTextGood.Value, Vars::Menu::Theme::Background.Value);
+				else if (pPlayer->InCond(TF_COND_HEALTH_OVERHEALED))
+					tCache.m_vText.emplace_back(ESPTextEnum::Right, "HP", Vars::Colors::IndicatorTextGood.Value, Vars::Menu::Theme::Background.Value);
+
+				//if (pPlayer->InCond(TF_COND_BLASTJUMPING))
+				//	tCache.m_vText.emplace_back(ESPTextEnum::Right, "Blastjump", Vars::Colors::IndicatorTextMid.Value, Vars::Menu::Theme::Background.Value);
 			}
 
 			// Debuffs
@@ -437,11 +479,11 @@ void CESP::StoreBuildings(CTFPlayer* pLocal)
 				if (!(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Prioritized && F::PlayerUtils.IsPrioritized(iIndex))
 					&& !(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Friends && H::Entities.IsFriend(iIndex))
 					&& !(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Party && H::Entities.InParty(iIndex))
-					&& pOwner->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Team) : !(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Enemy))
+					&& !(pOwner->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Enemy : Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Team))
 					continue;
 			}
 		}
-		else if (pEntity->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Team) : !(Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Enemy))
+		else if (!(pEntity->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Enemy : Vars::ESP::Building.Value & Vars::ESP::BuildingEnum::Team))
 			continue;
 
 		bool bIsMini = pBuilding->m_bMiniBuilding();
@@ -591,11 +633,11 @@ void CESP::StoreProjectiles(CTFPlayer* pLocal)
 				if (!(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Prioritized && F::PlayerUtils.IsPrioritized(iIndex))
 					&& !(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Friends && H::Entities.IsFriend(iIndex))
 					&& !(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Party && H::Entities.InParty(iIndex))
-					&& pOwner->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Team) : !(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Enemy))
+					&& !(pOwner->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Enemy : Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Team))
 					continue;
 			}
 		}
-		else if (pEntity->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Team) : !(Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Enemy))
+		else if (!(pEntity->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Enemy : Vars::ESP::Projectile.Value & Vars::ESP::ProjectileEnum::Team))
 			continue;
 
 		WorldCache& tCache = m_mWorldCache[pEntity];
@@ -743,7 +785,7 @@ void CESP::StoreObjective(CTFPlayer* pLocal)
 
 	for (auto pEntity : H::Entities.GetGroup(EGroupType::WORLD_OBJECTIVE))
 	{
-		if (pEntity->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::ESP::Objective.Value & Vars::ESP::ObjectiveEnum::Team) : !(Vars::ESP::Objective.Value & Vars::ESP::ObjectiveEnum::Enemy))
+		if (!(pEntity->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Objective.Value & Vars::ESP::ObjectiveEnum::Enemy : Vars::ESP::Objective.Value & Vars::ESP::ObjectiveEnum::Team))
 			continue;
 
 		WorldCache& tCache = m_mWorldCache[pEntity];
@@ -1163,17 +1205,24 @@ void CESP::DrawWorld()
 	I::MatSystemSurface->DrawSetAlphaMultiplier(1.f);
 }
 
+Color_t CESP::GetColor(CTFPlayer* pLocal, CBaseEntity* pEntity)
+{
+	if (pEntity->entindex() == I::EngineClient->GetLocalPlayer())
+		return Vars::Colors::Local.Value;
+	if (pEntity->entindex() == G::AimTarget.m_iEntIndex)
+		return Vars::Colors::Target.Value;
+	return H::Color.GetTeamColor(pLocal->m_iTeamNum(), pEntity->m_iTeamNum(), Vars::Colors::Relative.Value);
+}
+
 bool CESP::GetDrawBounds(CBaseEntity* pEntity, float& x, float& y, float& w, float& h)
 {
-	auto& transform = const_cast<matrix3x4&>(pEntity->RenderableToWorldTransform());
-	if (pEntity->entindex() == I::EngineClient->GetLocalPlayer())
-	{
-		Math::AngleMatrix({ 0.f, I::EngineClient->GetViewAngles().y, 0.f }, transform);
-		Math::MatrixSetColumn(pEntity->GetAbsOrigin(), 3, transform);
-	}
+	Vec3 vOrigin = pEntity->GetAbsOrigin();
+	matrix3x4 mTransform = { { 1, 0, 0, vOrigin.x }, { 0, 1, 0, vOrigin.y }, { 0, 0, 1, vOrigin.z } };
+	//if (pEntity->entindex() == I::EngineClient->GetLocalPlayer())
+		Math::AngleMatrix({ 0.f, I::EngineClient->GetViewAngles().y, 0.f }, mTransform, false);
 
 	float flLeft, flRight, flTop, flBottom;
-	if (!SDK::IsOnScreen(pEntity, transform, &flLeft, &flRight, &flTop, &flBottom))
+	if (!SDK::IsOnScreen(pEntity, mTransform, &flLeft, &flRight, &flTop, &flBottom))
 		return false;
 
 	x = flLeft;

@@ -59,9 +59,12 @@ void CAimbot::RunMain(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 		pCmd->weaponselect = F::AimbotProjectile.m_iLastTickCancel;
 		F::AimbotProjectile.m_iLastTickCancel = 0;
 	}
-m_bRan = false;
-G::Target = { 0, 0 };
-G::AimPosition = { {}, 0 };
+
+	m_bRan = false;
+	if (abs(G::AimTarget.m_iTickCount - I::GlobalVars->tickcount) > G::AimTarget.m_iDuration)
+		G::AimTarget = {};
+	if (abs(G::AimPoint.m_iTickCount - I::GlobalVars->tickcount) > G::AimPoint.m_iDuration)
+		G::AimPoint = {};
 
 	if (pCmd->weaponselect)
 		return;
@@ -83,4 +86,5 @@ void CAimbot::Run(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUserCmd* pCmd)
 	RunMain(pLocal, pWeapon, pCmd);
 
 	G::Attacking = SDK::IsAttacking(pLocal, pWeapon, pCmd, true);
+	G::Target.first = 0;
 }

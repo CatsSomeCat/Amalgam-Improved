@@ -102,7 +102,7 @@ static inline bool CheckEntities(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUse
 		if (Vars::Aimbot::Projectile::AutoDetonate.Value & Vars::Aimbot::Projectile::AutoDetonateEnum::IgnoreCloak && pEntity->IsPlayer())
 		{
 			auto pPlayer = pEntity->As<CTFPlayer>();
-			if (pPlayer->IsInvisible() && pPlayer->GetInvisPercentage() >= Vars::Aimbot::General::IgnoreCloakPercentage.Value)
+			if (pPlayer->IsInvisible() && pPlayer->GetInvisPercentage() >= Vars::Aimbot::General::IgnoreCloak.Value)
 				continue;
 		}
 
@@ -129,7 +129,7 @@ bool CAutoDetonate::CheckDetonation(CTFPlayer* pLocal, EGroupType entityGroup, f
 	if (vProjectiles.empty())
 		return false;
 
-	float flLatency = std::max(F::Backtrack.GetReal() - 0.05f, 0.f);
+	float flLatency = F::Backtrack.GetReal(); //std::max(F::Backtrack.GetReal() - 0.05f, 0.f);
 
 	for (auto pProjectile : vProjectiles)
 	{

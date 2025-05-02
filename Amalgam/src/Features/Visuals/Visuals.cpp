@@ -71,9 +71,7 @@ void CVisuals::DrawTicks(CTFPlayer* pLocal)
 		}
 	}
 	else
-	{
-		H::Draw.String(fFont, dtPos.x, dtPos.y - fFont.m_nTall / 2 - 2, Vars::Menu::Theme::Active.Value, ALIGN_TOP, std::format("Speedhack x{}", Vars::CL_Move::SpeedFactor.Value).c_str());
-	}
+		H::Draw.String(fFont, dtPos.x, dtPos.y + 2, Vars::Menu::Theme::Active.Value, ALIGN_TOP, std::format("Speedhack x{}", Vars::Speedhack::Factor.Value).c_str());
 }
 
 /*void CVisuals::DrawTickbaseBars()
@@ -411,7 +409,7 @@ void CVisuals::SplashRadius(CTFPlayer* pLocal)
 			if (!(Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Priority && F::PlayerUtils.IsPrioritized(pOwner->entindex()))
 				&& !(Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Friends && H::Entities.IsFriend(pOwner->entindex()))
 				&& !(Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Party && H::Entities.InParty(pOwner->entindex()))
-				&& pOwner->m_iTeamNum() == pLocal->m_iTeamNum() ? !(Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Team) : !(Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Enemy))
+				&& !(pOwner->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Enemy : Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Team))
 				continue;
 		}
 		else if (!(Vars::Visuals::Simulation::SplashRadius.Value & Vars::Visuals::Simulation::SplashRadiusEnum::Local))
@@ -468,11 +466,9 @@ void CVisuals::DrawAntiAim(CTFPlayer* pLocal)
 		Vec3 vScreen1, vScreen2;
 		if (SDK::W2S(vOrigin, vScreen1))
 		{
-			constexpr auto distance = 50.f;
-			if (SDK::W2S(Math::GetRotatedPosition(vOrigin, F::AntiAim.vRealAngles.y, distance), vScreen2))
+			if (SDK::W2S(vOrigin + Math::RotatePoint({ 50, 0, 0 }, {}, { 0, F::AntiAim.vRealAngles.y, 0 }), vScreen2))
 				H::Draw.Line(vScreen1.x, vScreen1.y, vScreen2.x, vScreen2.y, { 0, 255, 0, 255 });
-
-			if (SDK::W2S(Math::GetRotatedPosition(vOrigin, F::AntiAim.vFakeAngles.y, distance), vScreen2))
+			if (SDK::W2S(vOrigin + Math::RotatePoint({ 50, 0, 0 }, {}, { 0, F::AntiAim.vFakeAngles.y, 0 }), vScreen2))
 				H::Draw.Line(vScreen1.x, vScreen1.y, vScreen2.x, vScreen2.y, { 255, 0, 0, 255 });
 		}
 
@@ -672,9 +668,7 @@ void CVisuals::DrawPath(std::deque<Vec3>& Line, Color_t Color, int iStyle, bool 
 				Vec3& vStart = Line[i - 1];
 				Vec3& vEnd = Line[i];
 
-				Vec3 vDir = vEnd - vStart;
-				vDir.z = 0;
-				vDir.Normalize();
+				Vec3 vDir = (vEnd - vStart).To2D().Normalized();
 				vDir = Math::RotatePoint(vDir * Vars::Visuals::Simulation::SeparatorLength.Value, {}, { 0, 90, 0 });
 				RenderLine(vEnd, vEnd + vDir, Color, bZBuffer);
 			}
@@ -804,7 +798,7 @@ void CVisuals::DrawLines()
 		if (tLine.m_flTime < I::GlobalVars->curtime)
 			continue;
 
-		RenderLine(tLine.m_vPair.first, tLine.m_vPair.second, tLine.m_color, tLine.m_bZBuffer);
+		RenderLine(tLine.m_vPair.first, tLine.m_vPair.second, tLine.m_tColor, tLine.m_bZBuffer);
 	}
 }
 
@@ -815,7 +809,7 @@ void CVisuals::DrawPaths()
 		if (tPath.m_flTime >= 0.f && tPath.m_flTime < I::GlobalVars->curtime)
 			continue;
 
-		DrawPath(tPath.m_vPath, tPath.m_color, tPath.m_iStyle, tPath.m_bZBuffer, tPath.m_flTime);
+		DrawPath(tPath.m_vPath, tPath.m_tColor, tPath.m_iStyle, tPath.m_bZBuffer, tPath.m_flTime);
 	}
 }
 
@@ -850,7 +844,7 @@ void CVisuals::RestoreBoxes()
 
 void CVisuals::DrawServerHitboxes(CTFPlayer* pLocal)
 {
-	if (!Vars::Debug::ServerHitbox.Value)
+	if (!Vars::Debug::DrawServerHitboxes.Value)
 		return;
 
 	if (I::Input->CAM_IsThirdPerson() && pLocal->IsAlive())
@@ -924,7 +918,7 @@ void CVisuals::ThirdPerson(CTFPlayer* pLocal, CViewSetup* pView)
 	//if (bForce)
 	//	return;
 
-	if (Vars::Visuals::ThirdPerson::Enabled.Value && !bZoom || bForce)
+	if (Vars::Visuals::Thirdperson::Enabled.Value && !bZoom || bForce)
 		I::Input->CAM_ToThirdPerson();
 	else
 		I::Input->CAM_ToFirstPerson();
@@ -938,16 +932,16 @@ void CVisuals::ThirdPerson(CTFPlayer* pLocal, CViewSetup* pView)
 		Vec3 vForward, vRight, vUp; Math::AngleVectors(pView->angles, &vForward, &vRight, &vUp);
 
 		Vec3 vOffset;
-		float flScale = Vars::Visuals::ThirdPerson::Scale.Value ? pLocal->m_flModelScale() : 1.f;
-		vOffset += vRight * Vars::Visuals::ThirdPerson::Right.Value * flScale;
-		vOffset += vUp * Vars::Visuals::ThirdPerson::Up.Value * flScale;
-		vOffset -= vForward * Vars::Visuals::ThirdPerson::Distance.Value * flScale;
+		float flScale = Vars::Visuals::Thirdperson::Scale.Value ? pLocal->m_flModelScale() : 1.f;
+		vOffset += vRight * Vars::Visuals::Thirdperson::Right.Value * flScale;
+		vOffset += vUp * Vars::Visuals::Thirdperson::Up.Value * flScale;
+		vOffset -= vForward * Vars::Visuals::Thirdperson::Distance.Value * flScale;
 
 		Vec3 vOrigin = pLocal->GetEyePosition(); //pView->origin
 		Vec3 vStart = vOrigin;
 		Vec3 vEnd = vOrigin + vOffset;
 
-		if (Vars::Visuals::ThirdPerson::Collide.Value)
+		if (Vars::Visuals::Thirdperson::Collide.Value)
 		{
 			float flHull = 9.f * flScale;
 			Vec3 vMins = { -flHull, -flHull, -flHull }, vMaxs = { flHull, flHull, flHull };
@@ -965,7 +959,7 @@ void CVisuals::ThirdPerson(CTFPlayer* pLocal, CViewSetup* pView)
 void CVisuals::DrawSightlines()
 {
 	for (auto& tSightline : m_vSightLines)
-		RenderLine(tSightline.m_vStart, tSightline.m_vEnd, tSightline.m_Color);
+		RenderLine(tSightline.m_vStart, tSightline.m_vEnd, tSightline.m_Color, tSightline.m_bZBuffer);
 }
 
 void CVisuals::Store(CTFPlayer* pLocal)
@@ -974,7 +968,7 @@ void CVisuals::Store(CTFPlayer* pLocal)
 		return;
 
 	m_vSightLines.clear();
-	if (Vars::Visuals::UI::SniperSightlines.Value)
+	if (Vars::ESP::Other::SniperSightlines.Value & ~Vars::ESP::Other::SniperSightlinesEnum::DrawThroughWalls)
 	{
 		std::unordered_map<IClientEntity*, Vec3> mDots = {};
 		for (auto pEntity : H::Entities.GetGroup(EGroupType::MISC_DOTS))
@@ -983,16 +977,17 @@ void CVisuals::Store(CTFPlayer* pLocal)
 				mDots[pOwner] = pEntity->m_vecOrigin();
 		}
 
-		for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ENEMIES))
+		bool bDrawThroughWalls = Vars::ESP::Other::SniperSightlines.Value & Vars::ESP::Other::SniperSightlinesEnum::DrawThroughWalls;
+		for (auto pEntity : H::Entities.GetGroup(EGroupType::PLAYERS_ALL))
 		{
 			auto pPlayer = pEntity->As<CTFPlayer>();
+			if (pPlayer == pLocal || !(pPlayer->m_iTeamNum() != pLocal->m_iTeamNum() ? Vars::ESP::Other::SniperSightlines.Value & Vars::ESP::Other::SniperSightlinesEnum::Enemy : Vars::ESP::Other::SniperSightlines.Value & Vars::ESP::Other::SniperSightlinesEnum::Team))
+				continue;
 
 			auto pWeapon = pPlayer->m_hActiveWeapon().Get()->As<CTFWeaponBase>();
 			if (pPlayer->IsDormant() || !pPlayer->IsAlive() || pPlayer->IsAGhost() || !pPlayer->InCond(TF_COND_AIMING) ||
 				!pWeapon || pWeapon->GetWeaponID() == TF_WEAPON_COMPOUND_BOW || pWeapon->GetWeaponID() == TF_WEAPON_MINIGUN)
-			{
 				continue;
-			}
 
 			Vec3 vShootPos = pPlayer->m_vecOrigin() + pPlayer->GetViewOffset();
 			Vec3 vForward; Math::AngleVectors(pPlayer->GetEyeAngles(), &vForward);
@@ -1002,14 +997,14 @@ void CVisuals::Store(CTFPlayer* pLocal)
 			CTraceFilterHitscan filter = {}; filter.pSkip = pPlayer;
 			SDK::Trace(vShootPos, vShootEnd, MASK_SHOT, &filter, &trace);
 
-			m_vSightLines.emplace_back(vShootPos, trace.endpos, H::Color.GetEntityDrawColor(pLocal, pPlayer, Vars::Colors::Relative.Value));
+			m_vSightLines.emplace_back(vShootPos, trace.endpos, H::Color.GetEntityDrawColor(pLocal, pPlayer, Vars::Colors::Relative.Value), !bDrawThroughWalls);
 		}
 	}
 }
 
 void CVisuals::DrawPickupTimers()
 {
-	if (!Vars::Visuals::UI::PickupTimers.Value)
+	if (!Vars::ESP::Other::PickupTimers.Value)
 		return;
 
 	for (auto it = m_vPickups.begin(); it != m_vPickups.end();)
@@ -1086,7 +1081,7 @@ void CVisuals::Event(IGameEvent* pEvent, uint32_t uHash)
 	}
 	case FNV1A::Hash32Const("item_pickup"):
 	{
-		if (!Vars::Visuals::UI::PickupTimers.Value)
+		if (!Vars::ESP::Other::PickupTimers.Value)
 			return;
 
 		auto pEntity = I::ClientEntityList->GetClientEntity(I::EngineClient->GetPlayerForUserID(pEvent->GetInt("userid")))->As<CTFPlayer>();
@@ -1160,7 +1155,7 @@ void CVisuals::OverrideWorldTextures()
 	}
 }
 
-static inline void ApplyModulation(const Color_t& clr, bool bSky = false)
+static inline void ApplyModulation(const Color_t& tColor, bool bSky = false)
 {
 	for (auto h = I::MaterialSystem->FirstMaterial(); h != I::MaterialSystem->InvalidMaterial(); h = I::MaterialSystem->NextMaterial(h))
 	{
@@ -1172,7 +1167,7 @@ static inline void ApplyModulation(const Color_t& clr, bool bSky = false)
 		if (!bSky ? !sGroup._Starts_with("World") : !sGroup._Starts_with("SkyBox"))
 			continue;
 
-		pMaterial->ColorModulate(float(clr.r) / 255.f, float(clr.g) / 255.f, float(clr.b) / 255.f);
+		pMaterial->ColorModulate(tColor.r / 255.f, tColor.g / 255.f, tColor.b / 255.f);
 	}
 }
 
@@ -1185,26 +1180,26 @@ void CVisuals::Modulate()
 	bool bSetChanged, bColorChanged, bSkyChanged, bConnection;
 	{
 		static bool bStaticWorld = false, bStaticSky = false;
-		bool bOldWorld = bStaticWorld, bOldSky = bStaticSky;
-		bool bNewWorld = bStaticWorld = bWorldModulation, bNewSky = bStaticSky = bSkyModulation;
+		const bool bOldWorld = bStaticWorld, bOldSky = bStaticSky;
+		const bool bNewWorld = bStaticWorld = bWorldModulation, bNewSky = bStaticSky = bSkyModulation;
 		bSetChanged = bNewWorld != bOldWorld || bNewSky != bOldSky;
 	}
 	{
 		static Color_t tStaticWorld = {}, tStaticSky = {};
-		Color_t tOldWorld = tStaticWorld, tOldSky = tStaticSky;
-		Color_t tNewWorld = tStaticWorld = Vars::Colors::WorldModulation.Value, tNewSky = tStaticSky = Vars::Colors::SkyModulation.Value;
+		const Color_t tOldWorld = tStaticWorld, tOldSky = tStaticSky;
+		const Color_t tNewWorld = tStaticWorld = Vars::Colors::WorldModulation.Value, tNewSky = tStaticSky = Vars::Colors::SkyModulation.Value;
 		bColorChanged = tNewWorld != tOldWorld || tNewSky != tOldSky;
 	}
 	{
 		static uint32_t uStatic = 0;
-		uint32_t uOld = uStatic;
-		uint32_t uNew = uStatic = FNV1A::Hash32(Vars::Visuals::World::SkyboxChanger.Value.c_str());
+		const uint32_t uOld = uStatic;
+		const uint32_t uNew = uStatic = FNV1A::Hash32(Vars::Visuals::World::SkyboxChanger.Value.c_str());
 		bSkyChanged = uNew != uOld;
 	}
 	{
 		static bool bStaticConnected = false;
-		bool bOldConnected = bStaticConnected;
-		bool bNewConnected = bStaticConnected = I::EngineClient->IsConnected() && I::EngineClient->IsInGame();
+		const bool bOldConnected = bStaticConnected;
+		const bool bNewConnected = bStaticConnected = I::EngineClient->IsConnected() && I::EngineClient->IsInGame();
 		bConnection = bNewConnected == bOldConnected;
 	}
 
@@ -1226,11 +1221,11 @@ void CVisuals::CreateMove(CTFPlayer* pLocal, CTFWeaponBase* pWeapon)
 	if (Vars::Visuals::Simulation::ShotPath.Value && G::Attacking == 1 && !F::Aimbot.m_bRan)
 		F::Visuals.ProjectileTrace(pLocal, pWeapon, false);
 
-	if (pLocal && Vars::Visuals::Particles::SpellFootsteps.Value && (F::Ticks.m_bDoubletap || F::Ticks.m_bWarp))
+	if (pLocal && Vars::Visuals::Effects::SpellFootsteps.Value && (F::Ticks.m_bDoubletap || F::Ticks.m_bWarp))
 		S::CTFPlayer_FireEvent.Call<void>(pLocal, pLocal->GetAbsOrigin(), QAngle(), 7001, nullptr);
 	
 	static uint32_t iOldMedigunBeam = 0, iOldMedigunCharge = 0;
-	uint32_t iNewMedigunBeam = FNV1A::Hash32(Vars::Visuals::Particles::MedigunBeam.Value.c_str()), iNewMedigunCharge = FNV1A::Hash32(Vars::Visuals::Particles::MedigunCharge.Value.c_str());
+	uint32_t iNewMedigunBeam = FNV1A::Hash32(Vars::Visuals::Effects::MedigunBeam.Value.c_str()), iNewMedigunCharge = FNV1A::Hash32(Vars::Visuals::Effects::MedigunCharge.Value.c_str());
 	if (iOldMedigunBeam != iNewMedigunBeam || iOldMedigunCharge != iNewMedigunCharge)
 	{
 		if (pWeapon && pWeapon->GetWeaponID() == TF_WEAPON_MEDIGUN)

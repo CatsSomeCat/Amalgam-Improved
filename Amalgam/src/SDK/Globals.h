@@ -10,7 +10,7 @@ struct DrawLine_t
 {
 	std::pair<Vec3, Vec3> m_vPair;
 	float m_flTime;
-	Color_t m_color;
+	Color_t m_tColor;
 	bool m_bZBuffer = false;
 };
 
@@ -18,7 +18,7 @@ struct DrawPath_t
 {
 	std::deque<Vec3> m_vPath;
 	float m_flTime;
-	Color_t m_color;
+	Color_t m_tColor;
 	int m_iStyle;
 	bool m_bZBuffer = false;
 };
@@ -42,6 +42,20 @@ struct MoveData_t
 	int m_iButtons = 0;
 };
 
+struct AimTarget_t
+{
+	int m_iEntIndex = 0;
+	int m_iTickCount = 0;
+	int m_iDuration = 32;
+};
+
+struct AimPoint_t
+{
+	Vec3 m_vOrigin = {};
+	int m_iTickCount = 0;
+	int m_iDuration = 32;
+};
+
 namespace G
 {
 	inline bool Unload = false;
@@ -60,8 +74,9 @@ namespace G
 	inline CUserCmd* LastUserCmd = nullptr;
 	inline MoveData_t OriginalMove = {};
 
+	inline AimTarget_t AimTarget = {};
 	inline std::pair<int, int> Target = { 0, 0 };
-	inline std::pair<Vec3, int> AimPosition = {};
+	inline AimPoint_t AimPoint = {};
 
 	inline bool SilentAngles = false;
 	inline bool PSilentAngles = false;
