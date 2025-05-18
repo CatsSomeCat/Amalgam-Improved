@@ -5,8 +5,8 @@
 void CFonts::Reload(float flDPI)
 {
 	m_mFonts[FONT_ESP] = { "micross", int(14.f * flDPI), FONTFLAG_OUTLINE, 0 };
-	m_mFonts[FONT_ESP_FLAG] = { "Small Fonts", int(9.f * flDPI), FONTFLAG_DROPSHADOW, 0 };
-	m_mFonts[FONT_ESP_HP] = { "Small Fonts", int(10.f * flDPI), FONTFLAG_DROPSHADOW, 0 };
+	m_mFonts[FONT_ESP_FLAG] = { "Small Fonts", int(9.f * flDPI), FONTFLAG_OUTLINE, 0 };
+	m_mFonts[FONT_ESP_HP] = { "Small Fonts", int(10.f * flDPI), FONTFLAG_OUTLINE, 0 };
 	m_mFonts[FONT_INDICATORS] = { "micross", int(14.f * flDPI), FONTFLAG_OUTLINE, 0 };
 
 	for (auto& [_, fFont] : m_mFonts)

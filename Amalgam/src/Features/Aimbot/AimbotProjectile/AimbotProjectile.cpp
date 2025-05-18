@@ -1552,11 +1552,20 @@ int CAimbotProjectile::CanHit(Target_t& tTarget, CTFPlayer* pLocal, CTFWeaponBas
 
 			if (bMain && Vars::Visuals::Hitbox::BoundsEnabled.Value & Vars::Visuals::Hitbox::BoundsEnabledEnum::AimPoint)
 			{
-				if (Vars::Colors::BoundHitboxEdge.Value.a || Vars::Colors::BoundHitboxFace.Value.a)
-					pBoxes->emplace_back(vTarget, tInfo.m_vHull * -1, tInfo.m_vHull, Vec3(), I::GlobalVars->curtime + (Vars::Visuals::Simulation::Timed.Value ? flProjectileTime : Vars::Visuals::Hitbox::DrawDuration.Value), Vars::Colors::BoundHitboxEdge.Value, Vars::Colors::BoundHitboxFace.Value);
-				if (Vars::Colors::BoundHitboxEdgeClipped.Value.a || Vars::Colors::BoundHitboxFaceClipped.Value.a)
-					pBoxes->emplace_back(vTarget, tInfo.m_vHull * -1, tInfo.m_vHull, Vec3(), I::GlobalVars->curtime + (Vars::Visuals::Simulation::Timed.Value ? flProjectileTime : Vars::Visuals::Hitbox::DrawDuration.Value), Vars::Colors::BoundHitboxEdgeClipped.Value, Vars::Colors::BoundHitboxFaceClipped.Value, true);
+				// Static aimpoint box size (5x5x5 units)
+				const Vec3 vStaticSize(2.5f, 2.5f, 2.5f); // Half-extents for the box
 
+				if (Vars::Colors::BoundHitboxEdge.Value.a || Vars::Colors::BoundHitboxFace.Value.a)
+					pBoxes->emplace_back(vTarget, vStaticSize * -1, vStaticSize, Vec3(),
+						I::GlobalVars->curtime + (Vars::Visuals::Simulation::Timed.Value ? flProjectileTime : Vars::Visuals::Hitbox::DrawDuration.Value),
+						Vars::Colors::BoundHitboxEdge.Value, Vars::Colors::BoundHitboxFace.Value);
+
+				if (Vars::Colors::BoundHitboxEdgeClipped.Value.a || Vars::Colors::BoundHitboxFaceClipped.Value.a)
+					pBoxes->emplace_back(vTarget, vStaticSize * -1, vStaticSize, Vec3(),
+						I::GlobalVars->curtime + (Vars::Visuals::Simulation::Timed.Value ? flProjectileTime : Vars::Visuals::Hitbox::DrawDuration.Value),
+						Vars::Colors::BoundHitboxEdgeClipped.Value, Vars::Colors::BoundHitboxFaceClipped.Value, true);
+
+				// Rest of the huntsman head debug code remains the same...
 				if (Vars::Debug::Info.Value && tTarget.m_nAimedHitbox == HITBOX_HEAD) // huntsman head
 				{
 					const Vec3 vOriginOffset = tTarget.m_pEntity->m_vecOrigin() - vPredicted;
@@ -1752,29 +1761,26 @@ bool CAimbotProjectile::RunMain(CTFPlayer* pLocal, CTFWeaponBase* pWeapon, CUser
 	{
 		float flTimeTo = 0.f; std::deque<Vec3> vPlayerPath, vProjectilePath; std::vector<DrawBox_t> vBoxes = {};
 		const int iResult = CanHit(tTarget, pLocal, pWeapon, &vPlayerPath, &vProjectilePath, &vBoxes, &flTimeTo);
-		if (!iResult)
+		if (iResult != 1 && pWeapon->GetWeaponID() == TF_WEAPON_CANNON && Vars::Aimbot::Projectile::Modifiers.Value & Vars::Aimbot::Projectile::ModifiersEnum::ChargeWeapon && !(pCmd->buttons & IN_ATTACK))
 		{
-			if (pWeapon->GetWeaponID() == TF_WEAPON_CANNON && !(pCmd->buttons & IN_ATTACK))
+			float flCharge = pWeapon->As<CTFGrenadeLauncher>()->m_flDetonateTime() > 0.f
+				? std::clamp(pWeapon->As<CTFGrenadeLauncher>()->m_flDetonateTime() - I::GlobalVars->curtime, 0.f, 1.f)
+				: 1.f;
+			if (!flTimeTo)
+				flTimeTo = std::numeric_limits<float>::max();
+			if (flCharge < flTimeTo)
 			{
-				float flCharge = pWeapon->As<CTFGrenadeLauncher>()->m_flDetonateTime() > 0.f
-					? std::clamp(pWeapon->As<CTFGrenadeLauncher>()->m_flDetonateTime() - I::GlobalVars->curtime, 0.f, 1.f)
-					: 1.f;
-				if (!flTimeTo)
-					flTimeTo = std::numeric_limits<float>::max();
-				if (flCharge < flTimeTo)
-				{
-					if (pWeapon->As<CTFGrenadeLauncher>()->m_flDetonateTime() > 0.f)
-						CancelShot(pLocal, pWeapon, pCmd, m_iLastTickCancel);
-				}
-				else
-				{
-					if (m_iLastTickCancel)
-						pCmd->weaponselect = m_iLastTickCancel = 0;
-					pCmd->buttons |= IN_ATTACK;
-				}
+				if (pWeapon->As<CTFGrenadeLauncher>()->m_flDetonateTime() > 0.f)
+					CancelShot(pLocal, pWeapon, pCmd, m_iLastTickCancel);
 			}
-			continue;
+			else
+			{
+				if (m_iLastTickCancel)
+					pCmd->weaponselect = m_iLastTickCancel = 0;
+				pCmd->buttons |= IN_ATTACK;
+			}
 		}
+		if (!iResult) continue;
 		if (iResult == 2)
 		{
 			G::AimTarget = { tTarget.m_pEntity->entindex(), I::GlobalVars->tickcount, 0 };
